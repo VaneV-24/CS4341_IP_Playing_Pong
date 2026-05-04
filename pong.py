@@ -23,6 +23,9 @@ U_RANGE = 0.015
 V_RANGE = 0.03
 
 class Pong:
+    def __init__(self, two_player=False):
+        self.two_player = two_player
+
     def initial_state(self):
         ball_x = 0.5
         ball_y = 0.5
@@ -30,18 +33,33 @@ class Pong:
         velocity_y = 0.01
         paddle_y = 0.5 - PADDLE_HEIGHT / 2
 
-        return ball_x, ball_y, velocity_x, velocity_y, paddle_y
+        if self.two_player:
+            paddle_left = 0.5 - PADDLE_HEIGHT / 2
+            return ball_x, ball_y, velocity_x, velocity_y, paddle_y, paddle_left
+        else:
+            return ball_x, ball_y, velocity_x, velocity_y, paddle_y
 
-    def step(self, state, action):
-        ball_x, ball_y, vx, vy, paddle_y = state
+    def step(self, state, action_y, action_left=None):
+        if self.two_player:
+            ball_x, ball_y, vx, vy, paddle_y, paddle_left = state
+        else:
+            ball_x, ball_y, vx, vy, paddle_y = state
 
         # Move paddle
-        paddle_y += ACTION_EFFECTS[action]
+        paddle_y += ACTION_EFFECTS[action_y]
 
         if paddle_y < 0:
             paddle_y = 0
         if paddle_y > 1 - PADDLE_HEIGHT:
             paddle_y = 1 - PADDLE_HEIGHT
+
+        if self.two_player:
+            paddle_left += ACTION_EFFECTS[action_left]
+
+            if paddle_left < 0:
+                paddle_left = 0
+            if paddle_left > 1 - PADDLE_HEIGHT:
+                paddle_left = 1 - PADDLE_HEIGHT
 
         # Move ball
         ball_x += vx
@@ -62,13 +80,23 @@ class Pong:
             ball_y = 2 - ball_y
             vy = -vy
 
-        # Left wall
-        if ball_x < 0:
-            ball_x = -ball_x
-            vx = -vx
+        # Left wall OR left paddle
+        if self.two_player:
+            if ball_x <= 0:
+                if paddle_left <= ball_y <= paddle_left + PADDLE_HEIGHT:
+                    ball_x = -ball_x
+                    vx = -vx
+                    reward = +1
+                else:
+                    reward = -1
+                    done = True
+        else:
+            if ball_x < 0:
+                ball_x = -ball_x
+                vx = -vx
 
-        # Paddle collision
-        if ball_x >= PADDLE_X and vx > 0:
+        # Right Paddle collision
+        if ball_x >= PADDLE_X:
             if paddle_y <= ball_y <= paddle_y + PADDLE_HEIGHT:
                 # Bounce
                 ball_x = 2 * PADDLE_X - ball_x
@@ -93,10 +121,17 @@ class Pong:
                 done = True
                 ball_x = 1.1
 
-        return (ball_x, ball_y, vx, vy, paddle_y), reward, done
+        if self.two_player:
+            return (ball_x, ball_y, vx, vy, paddle_y, paddle_left), reward, done
+        else:
+            return (ball_x, ball_y, vx, vy, paddle_y), reward, done
 
     def discretize(self, state):
-        ball_x, ball_y, vx, vy, paddle_y = state
+
+        if self.two_player:
+            ball_x, ball_y, vx, vy, paddle_y, paddle_left = state
+        else:
+            ball_x, ball_y, vx, vy, paddle_y = state
 
         # Terminal state
         if ball_x > 1:
@@ -117,19 +152,34 @@ class Pong:
         else:
             vy_disc = -1
 
-        # Paddle
-        paddle_disc = int(math.floor(
+        # Paddle y
+        paddle_y_disc = int(math.floor(
             GRID_SIZE * paddle_y / (1 - PADDLE_HEIGHT)))
 
-        if paddle_disc >= GRID_SIZE:
-            paddle_disc = GRID_SIZE - 1
+        if paddle_y_disc >= GRID_SIZE:
+            paddle_y_disc = GRID_SIZE - 1
 
-        # Combine into one to return
+        if not self.two_player:
+            # Combine into one to return
+            state_index = (
+                bx * (GRID_SIZE * 2 * 3 * GRID_SIZE) +
+                by * (2 * 3 * GRID_SIZE) +
+                (vx_disc == 1) * (3 * GRID_SIZE) +
+                (vy_disc + 1) * GRID_SIZE +
+                paddle_y_disc)
+
+        paddle_left_disc = int(math.floor(
+            GRID_SIZE * paddle_y / (1 - PADDLE_HEIGHT)))
+
+        if paddle_left_disc >= GRID_SIZE:
+            paddle_left_disc = GRID_SIZE - 1
+
         state_index = (
-            bx * (GRID_SIZE * 2 * 3 * GRID_SIZE) +
-            by * (2 * 3 * GRID_SIZE) +
-            (vx_disc == 1) * (3 * GRID_SIZE) +
-            (vy_disc + 1) * GRID_SIZE +
-            paddle_disc)
+            bx * (GRID_SIZE * 2 * 3 * GRID_SIZE * GRID_SIZE) +
+            by * (2 * 3 * GRID_SIZE * GRID_SIZE) +
+            (vx_disc == 1) * (3 * GRID_SIZE * GRID_SIZE) +
+            (vy_disc + 1) * (GRID_SIZE * GRID_SIZE) +
+            paddle_left_disc * GRID_SIZE +
+            paddle_y_disc)
 
         return state_index
