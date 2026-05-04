@@ -2,4 +2,7 @@
 name = "cs4341-ip-playing-pong"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "numpy>=2.4.4",
+    "pygame>=2.6.1",
+]

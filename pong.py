@@ -31,17 +31,19 @@ class Pong:
         ball_y = 0.5
         velocity_x = 0.03
         velocity_y = 0.01
+        # Right Paddle
         paddle_y = 0.5 - PADDLE_HEIGHT / 2
 
         if self.two_player:
-            paddle_left = 0.5 - PADDLE_HEIGHT / 2
-            return ball_x, ball_y, velocity_x, velocity_y, paddle_y, paddle_left
+            #Left Paddle
+            paddle_x = 0.5 - PADDLE_HEIGHT / 2
+            return ball_x, ball_y, velocity_x, velocity_y, paddle_y, paddle_x
         else:
             return ball_x, ball_y, velocity_x, velocity_y, paddle_y
 
-    def step(self, state, action_y, action_left=None):
+    def step(self, state, action_y, action_x=None):
         if self.two_player:
-            ball_x, ball_y, vx, vy, paddle_y, paddle_left = state
+            ball_x, ball_y, vx, vy, paddle_y, paddle_x = state
         else:
             ball_x, ball_y, vx, vy, paddle_y = state
 
@@ -54,18 +56,19 @@ class Pong:
             paddle_y = 1 - PADDLE_HEIGHT
 
         if self.two_player:
-            paddle_left += ACTION_EFFECTS[action_left]
+            paddle_x += ACTION_EFFECTS[action_x]
 
-            if paddle_left < 0:
-                paddle_left = 0
-            if paddle_left > 1 - PADDLE_HEIGHT:
-                paddle_left = 1 - PADDLE_HEIGHT
+            if paddle_x < 0:
+                paddle_x = 0
+            if paddle_x > 1 - PADDLE_HEIGHT:
+                paddle_x = 1 - PADDLE_HEIGHT
 
         # Move ball
         ball_x += vx
         ball_y += vy
 
-        reward = 0
+        reward_y = 0
+        reward_x = 0
         done = False
 
         # Wall collisions
@@ -83,12 +86,22 @@ class Pong:
         # Left wall OR left paddle
         if self.two_player:
             if ball_x <= 0:
-                if paddle_left <= ball_y <= paddle_left + PADDLE_HEIGHT:
+                if paddle_x <= ball_y <= paddle_x + PADDLE_HEIGHT:
                     ball_x = -ball_x
                     vx = -vx
-                    reward = +1
+
+                    # Add randomness
+                    vx += random.uniform(-U_RANGE, U_RANGE)
+                    vy += random.uniform(-V_RANGE, V_RANGE)
+
+                    # Ensure minimum x velocity
+                    if abs(vx) < MIN_VX:
+                        vx = MIN_VX if vx > 0 else -MIN_VX
+
+                    reward_x = +1
                 else:
-                    reward = -1
+                    reward_x = -1
+                    reward_y = +1
                     done = True
         else:
             if ball_x < 0:
@@ -113,53 +126,95 @@ class Pong:
                 vx = max(min(vx, 1), -1)
                 vy = max(min(vy, 1), -1)
 
-                reward = +1
+                reward_y = +1
 
             else:
                 # Missed paddle
-                reward = -1
+                reward_y = -1
+                reward_x = +1
                 done = True
                 ball_x = 1.1
 
         if self.two_player:
-            return (ball_x, ball_y, vx, vy, paddle_y, paddle_left), reward, done
+            return (ball_x, ball_y, vx, vy, paddle_y, paddle_x), reward_y, reward_x, done
         else:
-            return (ball_x, ball_y, vx, vy, paddle_y), reward, done
+            return (ball_x, ball_y, vx, vy, paddle_y), reward_y, done
 
     def discretize(self, state):
 
         if self.two_player:
-            ball_x, ball_y, vx, vy, paddle_y, paddle_left = state
+            ball_x, ball_y, vx, vy, paddle_y, paddle_x = state
+
+            # Terminal state
+            if ball_x > 1:
+                return 124416
+
+            # Ball position
+            bx = min(int(ball_x * GRID_SIZE), GRID_SIZE - 1)
+            by = min(int(ball_y * GRID_SIZE), GRID_SIZE - 1)
+
+            # Velocity X
+            vx_disc = 1 if vx > 0 else -1
+
+            # Velocity Y
+            if abs(vy) < 0.015:
+                vy_disc = 0
+            elif vy > 0:
+                vy_disc = 1
+            else:
+                vy_disc = -1
+
+            paddle_y_disc = int(math.floor(
+                GRID_SIZE * paddle_y / (1 - PADDLE_HEIGHT)))
+
+            if paddle_y_disc >= GRID_SIZE:
+                paddle_y_disc = GRID_SIZE - 1
+
+            paddle_x_disc = int(math.floor(
+                GRID_SIZE * paddle_y / (1 - PADDLE_HEIGHT)))
+
+            if paddle_x_disc >= GRID_SIZE:
+                paddle_x_disc = GRID_SIZE - 1
+
+            state_index = (
+                    bx * (GRID_SIZE * 2 * 3 * GRID_SIZE * GRID_SIZE) +
+                    by * (2 * 3 * GRID_SIZE * GRID_SIZE) +
+                    (vx_disc == 1) * (3 * GRID_SIZE * GRID_SIZE) +
+                    (vy_disc + 1) * (GRID_SIZE * GRID_SIZE) +
+                    paddle_x_disc * GRID_SIZE +
+                    paddle_y_disc)
+
+            return state_index
+
         else:
             ball_x, ball_y, vx, vy, paddle_y = state
 
-        # Terminal state
-        if ball_x > 1:
-            return 10368
+            # Terminal state
+            if ball_x > 1:
+                return 10368
 
-        # Ball position
-        bx = min(int(ball_x * GRID_SIZE), GRID_SIZE - 1)
-        by = min(int(ball_y * GRID_SIZE), GRID_SIZE - 1)
+            # Ball position
+            bx = min(int(ball_x * GRID_SIZE), GRID_SIZE - 1)
+            by = min(int(ball_y * GRID_SIZE), GRID_SIZE - 1)
 
-        # Velocity X
-        vx_disc = 1 if vx > 0 else -1
+            # Velocity X
+            vx_disc = 1 if vx > 0 else -1
 
-        # Velocity Y
-        if abs(vy) < 0.015:
-            vy_disc = 0
-        elif vy > 0:
-            vy_disc = 1
-        else:
-            vy_disc = -1
+            # Velocity Y
+            if abs(vy) < 0.015:
+                vy_disc = 0
+            elif vy > 0:
+                vy_disc = 1
+            else:
+                vy_disc = -1
 
-        # Paddle y
-        paddle_y_disc = int(math.floor(
-            GRID_SIZE * paddle_y / (1 - PADDLE_HEIGHT)))
+            # Paddle y
+            paddle_y_disc = int(math.floor(
+                GRID_SIZE * paddle_y / (1 - PADDLE_HEIGHT)))
 
-        if paddle_y_disc >= GRID_SIZE:
-            paddle_y_disc = GRID_SIZE - 1
+            if paddle_y_disc >= GRID_SIZE:
+                paddle_y_disc = GRID_SIZE - 1
 
-        if not self.two_player:
             # Combine into one to return
             state_index = (
                 bx * (GRID_SIZE * 2 * 3 * GRID_SIZE) +
@@ -168,18 +223,4 @@ class Pong:
                 (vy_disc + 1) * GRID_SIZE +
                 paddle_y_disc)
 
-        paddle_left_disc = int(math.floor(
-            GRID_SIZE * paddle_y / (1 - PADDLE_HEIGHT)))
-
-        if paddle_left_disc >= GRID_SIZE:
-            paddle_left_disc = GRID_SIZE - 1
-
-        state_index = (
-            bx * (GRID_SIZE * 2 * 3 * GRID_SIZE * GRID_SIZE) +
-            by * (2 * 3 * GRID_SIZE * GRID_SIZE) +
-            (vx_disc == 1) * (3 * GRID_SIZE * GRID_SIZE) +
-            (vy_disc + 1) * (GRID_SIZE * GRID_SIZE) +
-            paddle_left_disc * GRID_SIZE +
-            paddle_y_disc)
-
-        return state_index
+            return state_index
